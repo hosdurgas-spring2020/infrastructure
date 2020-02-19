@@ -1,0 +1,27 @@
+[
+  {
+    "ParameterKey": "VpcCidr",
+    "ParameterValue": "10.192.0.0/16"
+  },
+
+  {
+    "ParameterKey": "SubnetCidr1",
+    "ParameterValue": "10.192.10.0/24"
+  },
+  {
+    "ParameterKey": "SubnetCidr2",
+    "ParameterValue": "10.192.11.0/24"
+  },
+  {
+    "ParameterKey": "SubnetCidr3",
+    "ParameterValue": "10.192.20.0/24"
+  },
+  {
+    "ParameterKey": "region",
+    "ParameterValue": "us-east-1"
+  },
+  {
+    "ParameterKey": "Name",
+    "ParameterValue": "CSYE"
+  }
+]

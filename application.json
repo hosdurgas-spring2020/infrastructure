@@ -66,8 +66,7 @@
       "Default": "ami-067fd4e9146ee24cc"
     },
     "KeyName": {
-      "Type": "String",
-      "Default": "csyekeypairall"
+      "Type": "String"
     }
   },
   "Resources": {
@@ -269,7 +268,8 @@
               "Action": [
                 "s3:Get*",
                 "s3:PutObject",
-                "s3:ListMultipartUploadParts"
+                "s3:ListMultipartUploadParts",
+                "s3:Delete*"
               ],
               "Resource": [
                 { "Fn::GetAtt": ["S3Bucket", "Arn"] },
@@ -344,23 +344,12 @@
         "MasterUsername": { "Ref": "DBUsername" },
         "MasterUserPassword": { "Ref": "DBPass" },
         "DBSubnetGroupName": { "Ref": "RDSSubnetGroup" },
-        "PubliclyAccessible": true,
+        "PubliclyAccessible": false,
         "DBName": { "Ref": "DBName" },
         "VPCSecurityGroups": [{ "Fn::GetAtt": ["DBSG", "GroupId"] }]
       }
     },
-    "DatabaseSecurityGp": {
-      "Type": "AWS::RDS::DBSecurityGroup",
-      "Properties": {
-        "DBSecurityGroupIngress": [
-          {
-            "EC2SecurityGroupId": { "Fn::GetAtt": ["DBSG", "GroupId"] }
-          }
-        ],
-        "EC2VpcId": { "Ref": "VPC" },
-        "GroupDescription": "Secutity Group for all DB"
-      }
-    },
+
     "RDSSubnetGroup": {
       "Type": "AWS::RDS::DBSubnetGroup",
       "Properties": {
@@ -400,6 +389,7 @@
               "\n",
               [
                 "#!/bin/bash -xe ",
+                "sudo apt-get update",
                 "sudo apt install mysql-client-core-5.7 -y",
                 "sudo apt install unzip -y",
                 "curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'",

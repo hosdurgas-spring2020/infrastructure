@@ -18,10 +18,18 @@
   },
   {
     "ParameterKey": "region",
-    "ParameterValue": "us-east-1"
+    "ParameterValue": "us-east-2"
   },
   {
     "ParameterKey": "Name",
     "ParameterValue": "CSYE"
+  },
+  {
+    "ParameterKey": "ImageID",
+    "ParameterValue": "ami-0225fdf40fc3664aa"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "useast2"
   }
 ]

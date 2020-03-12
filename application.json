@@ -67,6 +67,9 @@
     },
     "KeyName": {
       "Type": "String"
+    },
+    "CDS3Bucket": {
+      "Type": "String"
     }
   },
   "Resources": {
@@ -289,7 +292,7 @@
           ]
         },
         "PolicyName": "WebAppS3",
-        "Roles": [{ "Ref": "EC2Role" }]
+        "Roles": [{ "Ref": "EC2Role" }, { "Ref": "CodeDeployEC2ServiceRole" }]
       }
     },
     "ListS3BucketsInstanceProfile": {
@@ -298,7 +301,7 @@
         "Path": "/",
         "Roles": [
           {
-            "Ref": "EC2Role"
+            "Ref": "CodeDeployEC2ServiceRole"
           }
         ]
       }
@@ -349,7 +352,6 @@
         "VPCSecurityGroups": [{ "Fn::GetAtt": ["DBSG", "GroupId"] }]
       }
     },
-
     "RDSSubnetGroup": {
       "Type": "AWS::RDS::DBSubnetGroup",
       "Properties": {
@@ -400,25 +402,24 @@
                 "echo USERNAME = $(aws ssm get-parameters --names DBUsername --query Parameters[0].Value) >> env/properties/userdata.env ",
                 "echo PASSWORD = $(aws ssm get-parameters --names DBPass --query Parameters[0].Value) >> env/properties/userdata.env ",
                 "echo HOST = $(aws ssm get-parameters --names DBHost --query Parameters[0].Value) >> env/properties/userdata.env ",
-                "echo S3BUCKET = $(aws ssm get-parameters --names S3BucketName --query Parameters[0].Value) >> env/properties/userdata.env "
+                "echo S3BUCKET = $(aws ssm get-parameters --names S3BucketName --query Parameters[0].Value) >> env/properties/userdata.env ",
+                "sudo npm install pm2 -g"
               ]
             ]
           }
         },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "CodeDeployEC2"
+          }
+        ],
         "IamInstanceProfile": {
           "Ref": "ListS3BucketsInstanceProfile"
         }
       },
+
       "DependsOn": "RDS"
-    },
-    "S3BucketParam": {
-      "Type": "AWS::SSM::Parameter",
-      "Properties": {
-        "Name": "S3BucketName",
-        "Type": "String",
-        "Value": { "Ref": "S3Bucket" },
-        "Description": "SSM Parameter of type S3Bucket"
-      }
     },
     "RDSParam1": {
       "Type": "AWS::SSM::Parameter",
@@ -445,6 +446,235 @@
         "Type": "String",
         "Value": { "Ref": "DBPass" },
         "Description": "Passwords"
+      }
+    },
+
+    "S3BucketParam": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Name": "S3BucketName",
+        "Type": "String",
+        "Value": { "Ref": "S3Bucket" },
+        "Description": "SSM Parameter of type S3Bucket"
+      }
+    },
+
+    "CodeDeployEC2S3": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Action": ["s3:Get*", "s3:List*"],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::Join": ["", ["arn:aws:s3:::", { "Ref": "CDS3Bucket" }]]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    ["arn:aws:s3:::", { "Ref": "CDS3Bucket" }, "/*"]
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "PolicyName": "CodeDeploy-EC2-S3",
+        "Roles": [{ "Ref": "CodeDeployEC2ServiceRole" }],
+        "Users": ["circleci"]
+      }
+    },
+
+    "CircleCIUploadToS3": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:PutObject", "s3:Get*", "s3:List*"],
+              "Resource": [
+                {
+                  "Fn::Join": ["", ["arn:aws:s3:::", { "Ref": "CDS3Bucket" }]]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    ["arn:aws:s3:::", { "Ref": "CDS3Bucket" }, "/*"]
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "PolicyName": "CircleCI-Upload-To-S3",
+
+        "Users": ["circleci"]
+      }
+    },
+    "CircleCICodeDeploy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "codedeploy:RegisterApplicationRevision",
+                "codedeploy:GetApplicationRevision"
+              ],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:codedeploy:",
+                      { "Ref": "region" },
+                      ":",
+                      { "Ref": "AWS::AccountId" },
+                      ":application:csye6225-webapp"
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "codedeploy:CreateDeployment",
+                "codedeploy:GetDeployment"
+              ],
+              "Resource": ["*"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["codedeploy:GetDeploymentConfig"],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:codedeploy:",
+                      { "Ref": "region" },
+                      ":",
+                      { "Ref": "AWS::AccountId" },
+                      ":deploymentconfig:CodeDeployDefault.OneAtATime"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:codedeploy:",
+                      { "Ref": "region" },
+                      ":",
+                      { "Ref": "AWS::AccountId" },
+                      ":deploymentconfig:CodeDeployDefault.HalfAtATime"
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:codedeploy:",
+                      { "Ref": "region" },
+                      ":",
+                      { "Ref": "AWS::AccountId" },
+                      ":deploymentconfig:CodeDeployDefault.AllAtOnce"
+                    ]
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "PolicyName": "CircleCI-Code-Deploy",
+        "Users": ["circleci"]
+      }
+    },
+    "CodeDeployEC2ServiceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": ["ec2.amazonaws.com"]
+              },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        },
+        "Path": "/",
+        "RoleName": "CodeDeployEC2ServiceRole"
+      }
+    },
+    "CodeDeployServiceRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "codedeploy.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "RoleName": "CodeDeployServiceRole",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
+        ]
+      }
+    },
+    "CodeDeployServiceProfile": {
+      "Type": "AWS::IAM::InstanceProfile",
+      "Properties": {
+        "Path": "/",
+        "Roles": [
+          {
+            "Ref": "CodeDeployEC2ServiceRole"
+          }
+        ]
+      }
+    },
+
+    "CodeDeploy": {
+      "Type": "AWS::CodeDeploy::Application",
+      "Properties": {
+        "ApplicationName": "csye6225-webapp",
+        "ComputePlatform": "Server"
+      }
+    },
+    "CodeDeployGroup": {
+      "Type": "AWS::CodeDeploy::DeploymentGroup",
+      "Properties": {
+        "ApplicationName": { "Ref": "CodeDeploy" },
+        "DeploymentConfigName": "CodeDeployDefault.AllAtOnce",
+        "DeploymentGroupName": "csye6225-webapp-deployment",
+        "DeploymentStyle": {
+          "DeploymentOption": "WITHOUT_TRAFFIC_CONTROL",
+          "DeploymentType": "IN_PLACE"
+        },
+
+        "Ec2TagFilters": [
+          { "Key": "Name", "Value": "CodeDeployEC2", "Type": "KEY_AND_VALUE" }
+        ],
+        "ServiceRoleArn": { "Fn::GetAtt": ["CodeDeployServiceRole", "Arn"] }
       }
     }
   }

@@ -18,7 +18,7 @@
   },
   {
     "ParameterKey": "region",
-    "ParameterValue": "us-east-2"
+    "ParameterValue": "us-east-1"
   },
   {
     "ParameterKey": "Name",
@@ -26,10 +26,14 @@
   },
   {
     "ParameterKey": "ImageID",
-    "ParameterValue": "ami-0225fdf40fc3664aa"
+    "ParameterValue": "ami-02e955f74a49ec953"
   },
   {
     "ParameterKey": "KeyName",
-    "ParameterValue": "useast2"
+    "ParameterValue": "csyekeypairall"
+  },
+  {
+    "ParameterKey": "CDS3Bucket",
+    "ParameterValue": "codedeploy.prod.shaktichetan.me"
   }
 ]

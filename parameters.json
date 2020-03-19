@@ -26,7 +26,7 @@
   },
   {
     "ParameterKey": "ImageID",
-    "ParameterValue": "ami-0f79c18b1483ef5fe"
+    "ParameterValue": "ami-0794561e78628936b"
   },
   {
     "ParameterKey": "KeyName",
@@ -34,6 +34,6 @@
   },
   {
     "ParameterKey": "CDS3Bucket",
-    "ParameterValue": "codedeploy.prod.shaktichetan.me"
+    "ParameterValue": "codedeploy.shaktichetan.me"
   }
 ]

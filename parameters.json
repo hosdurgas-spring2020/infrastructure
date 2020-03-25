@@ -35,5 +35,9 @@
   {
     "ParameterKey": "CDS3Bucket",
     "ParameterValue": "codedeploy.shaktichetan.me"
+  },
+  {
+    "ParameterKey": "HostedZone",
+    "ParameterValue": "Z2NX4T3LPP2B35"
   }
 ]

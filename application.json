@@ -70,6 +70,9 @@
     },
     "CDS3Bucket": {
       "Type": "String"
+    },
+    "HostedZone": {
+      "Type": "String"
     }
   },
   "Resources": {
@@ -360,67 +363,6 @@
         "SubnetIds": [{ "Ref": "Subnet1" }, { "Ref": "Subnet2" }]
       }
     },
-    "EC2Instance": {
-      "Type": "AWS::EC2::Instance",
-      "Properties": {
-        "ImageId": { "Ref": "ImageID" },
-        "KeyName": { "Ref": "KeyName" },
-        "InstanceType": { "Ref": "EC2InstanceType" },
-        "BlockDeviceMappings": [
-          {
-            "DeviceName": "/dev/sdm",
-            "Ebs": {
-              "VolumeType": { "Ref": "VolumeType" },
-              "DeleteOnTermination": "true",
-              "VolumeSize": { "Ref": "VolumeSize" }
-            }
-          }
-        ],
-        "NetworkInterfaces": [
-          {
-            "AssociatePublicIpAddress": "true",
-            "DeleteOnTermination": true,
-            "GroupSet": [{ "Ref": "ApplicationSG" }],
-            "DeviceIndex": "0",
-            "SubnetId": { "Ref": "Subnet1" }
-          }
-        ],
-        "UserData": {
-          "Fn::Base64": {
-            "Fn::Join": [
-              "\n",
-              [
-                "#!/bin/bash -xe ",
-                "sudo apt-get update",
-                "sudo apt install mysql-client-core-5.7 -y",
-                "sudo apt install unzip -y",
-                "curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'",
-                "unzip awscliv2.zip",
-                "sudo ./aws/install",
-                "mkdir -p env/properties",
-                "touch env/properties/userdata.env",
-                "echo USERNAME = $(aws ssm get-parameters --names DBUsername --query Parameters[0].Value) >> env/properties/userdata.env ",
-                "echo PASSWORD = $(aws ssm get-parameters --names DBPass --query Parameters[0].Value) >> env/properties/userdata.env ",
-                "echo HOST = $(aws ssm get-parameters --names DBHost --query Parameters[0].Value) >> env/properties/userdata.env ",
-                "echo S3BUCKET = $(aws ssm get-parameters --names S3BucketName --query Parameters[0].Value) >> env/properties/userdata.env ",
-                "sudo npm install pm2 -g"
-              ]
-            ]
-          }
-        },
-        "Tags": [
-          {
-            "Key": "Name",
-            "Value": "CodeDeployEC2"
-          }
-        ],
-        "IamInstanceProfile": {
-          "Ref": "ListS3BucketsInstanceProfile"
-        }
-      },
-
-      "DependsOn": "RDS"
-    },
     "RDSParam1": {
       "Type": "AWS::SSM::Parameter",
       "Properties": {
@@ -667,6 +609,7 @@
     "CodeDeployGroup": {
       "Type": "AWS::CodeDeploy::DeploymentGroup",
       "Properties": {
+        "AutoScalingGroups": [{ "Ref": "WebServerGroup" }],
         "ApplicationName": { "Ref": "CodeDeploy" },
         "DeploymentConfigName": "CodeDeployDefault.AllAtOnce",
         "DeploymentGroupName": "csye6225-webapp-deployment",
@@ -674,11 +617,198 @@
           "DeploymentOption": "WITHOUT_TRAFFIC_CONTROL",
           "DeploymentType": "IN_PLACE"
         },
-
-        "Ec2TagFilters": [
-          { "Key": "Name", "Value": "CodeDeployEC2", "Type": "KEY_AND_VALUE" }
-        ],
         "ServiceRoleArn": { "Fn::GetAtt": ["CodeDeployServiceRole", "Arn"] }
+      }
+    },
+    "AutoScalingLaunchConfig": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "AssociatePublicIpAddress": true,
+        "IamInstanceProfile": {
+          "Ref": "ListS3BucketsInstanceProfile"
+        },
+        "ImageId": { "Ref": "ImageID" },
+        "InstanceType": { "Ref": "EC2InstanceType" },
+        "KeyName": { "Ref": "KeyName" },
+        "LaunchConfigurationName": "asg_launch_config",
+        "SecurityGroups": [{ "Ref": "ApplicationSG" }],
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n",
+              [
+                "#!/bin/bash -xe ",
+                "sudo apt-get update",
+                "sudo apt install mysql-client-core-5.7 -y",
+                "sudo apt install unzip -y",
+                "curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'",
+                "unzip awscliv2.zip",
+                "sudo ./aws/install",
+                "mkdir -p env/properties",
+                "touch env/properties/userdata.env",
+                "echo USERNAME = $(aws ssm get-parameters --names DBUsername --query Parameters[0].Value) >> env/properties/userdata.env ",
+                "echo PASSWORD = $(aws ssm get-parameters --names DBPass --query Parameters[0].Value) >> env/properties/userdata.env ",
+                "echo HOST = $(aws ssm get-parameters --names DBHost --query Parameters[0].Value) >> env/properties/userdata.env ",
+                "echo S3BUCKET = $(aws ssm get-parameters --names S3BucketName --query Parameters[0].Value) >> env/properties/userdata.env ",
+                "sudo npm install pm2 -g"
+              ]
+            ]
+          }
+        }
+      },
+      "DependsOn": "RDS"
+    },
+    "WebServerGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "AutoScalingGroupName": "WebappASG",
+        "Cooldown": "60",
+        "DesiredCapacity": "2",
+        "LaunchConfigurationName": { "Ref": "AutoScalingLaunchConfig" },
+        "MaxSize": "5",
+        "MinSize": "2",
+        "TargetGroupARNs": [{ "Ref": "TargetGroup" }],
+        "Tags": [
+          {
+            "Key": "Name",
+            "PropagateAtLaunch": true,
+            "Value": "CodeDeployASG"
+          }
+        ],
+        "VPCZoneIdentifier": [
+          { "Ref": "Subnet1" },
+          { "Ref": "Subnet2" },
+          { "Ref": "Subnet3" }
+        ]
+      },
+      "DependsOn": ["InternetGateWayAttachment", "LoadBalancer"]
+    },
+    "WebServerScaleUpPolicy": {
+      "Type": "AWS::AutoScaling::ScalingPolicy",
+      "Properties": {
+        "AdjustmentType": "ChangeInCapacity",
+        "AutoScalingGroupName": {
+          "Ref": "WebServerGroup"
+        },
+        "Cooldown": "60",
+        "ScalingAdjustment": "1"
+      }
+    },
+    "WebServerScaleDownPolicy": {
+      "Type": "AWS::AutoScaling::ScalingPolicy",
+      "Properties": {
+        "AdjustmentType": "ChangeInCapacity",
+        "AutoScalingGroupName": {
+          "Ref": "WebServerGroup"
+        },
+        "Cooldown": "60",
+        "ScalingAdjustment": "-1"
+      }
+    },
+    "CPUAlarmHigh": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Scale-up if CPU > 5% for 1 minutes",
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/EC2",
+        "Statistic": "Average",
+        "Period": "60",
+        "EvaluationPeriods": "2",
+        "Threshold": "5",
+        "AlarmActions": [
+          {
+            "Ref": "WebServerScaleUpPolicy"
+          }
+        ],
+        "Dimensions": [
+          {
+            "Name": "AutoScalingGroupName",
+            "Value": {
+              "Ref": "WebServerGroup"
+            }
+          }
+        ],
+        "ComparisonOperator": "GreaterThanThreshold"
+      }
+    },
+    "CPUAlarmLow": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmDescription": "Scale-down if CPU < 3% for 1 minutes",
+        "MetricName": "CPUUtilization",
+        "Namespace": "AWS/EC2",
+        "Statistic": "Average",
+        "Period": "60",
+        "EvaluationPeriods": "2",
+        "Threshold": "3",
+        "AlarmActions": [
+          {
+            "Ref": "WebServerScaleDownPolicy"
+          }
+        ],
+        "Dimensions": [
+          {
+            "Name": "AutoScalingGroupName",
+            "Value": {
+              "Ref": "WebServerGroup"
+            }
+          }
+        ],
+        "ComparisonOperator": "LessThanThreshold"
+      }
+    },
+    "TargetGroup": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {
+        "Name": "WebAppTG",
+        "Port": 5000,
+        "Protocol": "HTTP",
+        "VpcId": { "Ref": "VPC" }
+      }
+    },
+    "LoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Name": "WebAppLoadBalencer",
+        "SecurityGroups": [{ "Ref": "ApplicationSG" }],
+        "Subnets": [
+          { "Ref": "Subnet1" },
+          { "Ref": "Subnet2" },
+          { "Ref": "Subnet3" }
+        ],
+        "Type": "application"
+      }
+    },
+    "LoadBalancerListener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "LoadBalancerArn": { "Ref": "LoadBalancer" },
+        "Port": 80,
+        "Protocol": "HTTP",
+        "DefaultActions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": { "Ref": "TargetGroup" }
+          }
+        ]
+      }
+    },
+    "Route53Record": {
+      "Type": "AWS::Route53::RecordSetGroup",
+      "Properties": {
+        "HostedZoneId": { "Ref": "HostedZone" },
+        "RecordSets": [
+          {
+            "Name": "dev.shaktichetan.me.",
+            "Type": "A",
+            "AliasTarget": {
+              "HostedZoneId": {
+                "Fn::GetAtt": ["LoadBalancer", "CanonicalHostedZoneID"]
+              },
+              "DNSName": { "Fn::GetAtt": ["LoadBalancer", "DNSName"] }
+            }
+          }
+        ]
       }
     }
   }

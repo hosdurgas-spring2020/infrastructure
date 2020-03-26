@@ -73,6 +73,9 @@
     },
     "HostedZone": {
       "Type": "String"
+    },
+    "DNSName": {
+      "Type": "String"
     }
   },
   "Resources": {
@@ -799,7 +802,7 @@
         "HostedZoneId": { "Ref": "HostedZone" },
         "RecordSets": [
           {
-            "Name": "dev.shaktichetan.me.",
+            "Name": { "Ref": "DNSName" },
             "Type": "A",
             "AliasTarget": {
               "HostedZoneId": {

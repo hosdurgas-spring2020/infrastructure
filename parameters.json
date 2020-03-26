@@ -39,5 +39,9 @@
   {
     "ParameterKey": "HostedZone",
     "ParameterValue": "Z2NX4T3LPP2B35"
+  },
+  {
+    "ParameterKey": "DNSName",
+    "ParameterValue": "dev.shaktichetan.me"
   }
 ]

@@ -393,7 +393,6 @@
         "Description": "Passwords"
       }
     },
-
     "S3BucketParam": {
       "Type": "AWS::SSM::Parameter",
       "Properties": {
@@ -563,7 +562,11 @@
         "RoleName": "CodeDeployEC2ServiceRole",
         "ManagedPolicyArns": [
           "arn:aws:iam::aws:policy/CloudWatchAgentAdminPolicy",
-          "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+          "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+          "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole",
+          "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+          "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
+          "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
         ]
       }
     },
@@ -643,6 +646,7 @@
                 "#!/bin/bash -xe ",
                 "sudo apt-get update",
                 "sudo apt install mysql-client-core-5.7 -y",
+                "sudo npm install pm2 -g",
                 "sudo apt install unzip -y",
                 "curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'",
                 "unzip awscliv2.zip",
@@ -653,7 +657,9 @@
                 "echo PASSWORD = $(aws ssm get-parameters --names DBPass --query Parameters[0].Value) >> env/properties/userdata.env ",
                 "echo HOST = $(aws ssm get-parameters --names DBHost --query Parameters[0].Value) >> env/properties/userdata.env ",
                 "echo S3BUCKET = $(aws ssm get-parameters --names S3BucketName --query Parameters[0].Value) >> env/properties/userdata.env ",
-                "sudo npm install pm2 -g"
+                "echo SQSURL = $(aws ssm get-parameters --names SQSURL --query Parameters[0].Value) >> env/properties/userdata.env ",
+                "echo SNSARN = $(aws ssm get-parameters --names SNSARN --query Parameters[0].Value) >> env/properties/userdata.env ",
+                "echo DOMAIN = $(aws ssm get-parameters --names DOMAIN --query Parameters[0].Value) >> env/properties/userdata.env "
               ]
             ]
           }
@@ -672,8 +678,7 @@
         "MinSize": "2",
         "MetricsCollection": [
           {
-            "Granularity": "1Minute",
-            "Metrics": ["GroupMinSize", "GroupMaxSize"]
+            "Granularity": "1Minute"
           }
         ],
         "TargetGroupARNs": [{ "Ref": "TargetGroup" }],
@@ -722,7 +727,7 @@
         "Namespace": "AWS/EC2",
         "Statistic": "Average",
         "Period": "60",
-        "EvaluationPeriods": "2",
+        "EvaluationPeriods": "1",
         "Threshold": "5",
         "AlarmActions": [
           {
@@ -748,7 +753,7 @@
         "Namespace": "AWS/EC2",
         "Statistic": "Average",
         "Period": "60",
-        "EvaluationPeriods": "2",
+        "EvaluationPeriods": "1",
         "Threshold": "3",
         "AlarmActions": [
           {
@@ -818,6 +823,219 @@
             }
           }
         ]
+      }
+    },
+    "SNSTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": "SNSWebapp",
+        "Subscription": [
+          {
+            "Endpoint": { "Fn::GetAtt": ["LambdaFuntion", "Arn"] },
+            "Protocol": "lambda"
+          }
+        ]
+      }
+    },
+    "NetworkInterfavePolicy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "VisualEditor0",
+              "Effect": "Allow",
+              "Action": [
+                "ec2:CreateNetworkInterface",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DeleteNetworkInterface"
+              ],
+              "Resource": "*"
+            }
+          ]
+        },
+        "PolicyName": "NetworkPolicy",
+        "Roles": [{ "Ref": "AWSLambdaRole4" }]
+      }
+    },
+
+    "AWSLambdaRole4": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Description": "Role",
+        "Path": "/",
+        "RoleName": "AWSLambdaRole4",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/AWSLambdaFullAccess",
+          "arn:aws:iam::aws:policy/AmazonSESFullAccess"
+        ]
+      }
+    },
+    "SQS": {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "MaximumMessageSize": 262144,
+        "MessageRetentionPeriod": 3600,
+        "QueueName": "webappque",
+        "ReceiveMessageWaitTimeSeconds": 20
+      }
+    },
+    "LambdaFuntion": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "ZipFile": {
+            "Fn::Join": [
+              "\n",
+              [
+                "var aws = require('aws-sdk');",
+                "var ses = new aws.SES({region: 'us-east-1'});",
+                "var dynamodb = new aws.DynamoDB();",
+                "exports.handler = (event, context, callback) => {",
+                "var message = event.Records[0].Sns;",
+                "console.log(message)",
+                "const dbparams = {",
+                "ConditionExpression: 'attribute_not_exists(id)',",
+                "TableName: 'demo',",
+                "Item: {",
+                "id: {",
+                "S: message.Subject ,",
+                "},",
+                "Name: {",
+                "S: 'RequestToken',",
+                " },",
+                "TTL: {",
+                "N:(Math.floor(Date.now() / 1000) + 3600).toString(),",
+                "},",
+                "},",
+                "};",
+                "dynamodb.putItem(dbparams, function(err, data) {",
+                "if (err) {",
+                "if (err.code == 'ConditionalCheckFailedException') {",
+                "console.log('Exists')",
+                "context.succeed(event);",
+                "} else console.log(err);",
+                "} else {",
+                "var params = {",
+                " Destination: {",
+                "ToAddresses: [message.Subject]",
+                "},",
+                "Message: {",
+                "Body: {",
+                "Text: { Data: message.Message",
+                "}",
+                "},",
+                "Subject: { Data: 'YOUR BILLS ARE DUE'",
+                "}",
+                "},",
+                {
+                  "Fn::Sub": [
+                    "Source: 'billservices@${DNSName}'",
+                    { "DNSName": { "Ref": "DNSName" } }
+                  ]
+                },
+                "};",
+                "ses.sendEmail(params, function (err, data) {",
+                "callback(null, {err: err, data: data});",
+                "if (err) {",
+                "console.log(err);",
+                "context.fail(err);",
+                "} else {",
+                "console.log(data);",
+                "context.succeed(event);",
+                "}",
+                "});",
+                "}",
+                "});",
+                "}"
+              ]
+            ]
+          }
+        },
+        "Description": "Lambda Function to send emails",
+        "Environment": {
+          "Variables": { "SenderEmail": "shakti@dev.shaktichetan.me" }
+        },
+        "FunctionName": "WebappEmailSender1",
+        "Handler": "index.handler",
+        "Role": { "Fn::GetAtt": ["AWSLambdaRole4", "Arn"] },
+        "Runtime": "nodejs12.x"
+      }
+    },
+    "LambdaResourcePolicy": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": { "Ref": "LambdaFuntion" },
+        "Principal": "sns.amazonaws.com",
+        "Action": "lambda:InvokeFunction",
+        "SourceArn": { "Ref": "SNSTopic" }
+      }
+    },
+    "DynamoDBTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "id",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "id",
+            "KeyType": "HASH"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": "5",
+          "WriteCapacityUnits": "5"
+        },
+        "TableName": "demo",
+        "TimeToLiveSpecification": {
+          "AttributeName": "TTL",
+          "Enabled": true
+        }
+      }
+    },
+
+    "SQSParam": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Name": "SQSURL",
+        "Type": "String",
+        "Value": { "Ref": "SQS" },
+        "Description": "URL OF SQS"
+      }
+    },
+    "SNSParam": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Name": "SNSARN",
+        "Type": "String",
+        "Value": { "Ref": "SNSTopic" },
+        "Description": "SSM Parameter of type SNS"
+      }
+    },
+    "DomainName": {
+      "Type": "AWS::SSM::Parameter",
+      "Properties": {
+        "Name": "DOMAIN",
+        "Type": "String",
+        "Value": { "Ref": "DNSName" },
+        "Description": "SSM Parameter of type S3Bucket"
       }
     }
   }

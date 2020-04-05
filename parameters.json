@@ -34,14 +34,14 @@
   },
   {
     "ParameterKey": "CDS3Bucket",
-    "ParameterValue": "codedeploy.shaktichetan.me"
+    "ParameterValue": "codedeploy.prod.shaktichetan.me"
   },
   {
     "ParameterKey": "HostedZone",
-    "ParameterValue": "Z2NX4T3LPP2B35"
+    "ParameterValue": "Z4FNWHQPYEND0"
   },
   {
     "ParameterKey": "DNSName",
-    "ParameterValue": "dev.shaktichetan.me"
+    "ParameterValue": "prod.shaktichetan.me"
   }
 ]
